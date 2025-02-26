@@ -21,7 +21,13 @@ app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 app.use('/api', contactRoutes);
 app.use('/api', newsRoutes);
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`); 
-});
+// Solo usar app.listen en desarrollo local
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`); 
+  });
+}
+
+// Exportar la app para Vercel
+module.exports = app;
