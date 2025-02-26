@@ -1,4 +1,3 @@
-// server/index.js
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -10,8 +9,16 @@ const newsRoutes = require('./src/routes/newsRoutes');
 
 const app = express();
 
-// Middleware
-app.use(cors());
+// Configuración CORS específica
+const corsOptions = {
+  origin: ['https://toyoesports.com', 'http://localhost:3000'], // Añade aquí todos los dominios que necesites
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+};
+
+// Middleware con las opciones CORS
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Configurar multer para archivos estáticos
