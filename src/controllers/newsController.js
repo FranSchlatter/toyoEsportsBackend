@@ -1,29 +1,11 @@
-// server/src/controllers/newsController.js
-const fs = require('node:fs');
-const path = require('path');
-const News = require('../models/News');
 const multer = require('multer');
+const SftpClient = require('ssh2-sftp-client'); // 📌 Cliente SFTP para Hostinger
+const News = require('../models/News');
+require('dotenv').config();
 
-// Determinar la ruta de upload según el entorno
-const uploadPath = process.env.NODE_ENV === 'production'
-  ? process.env.PRODUCTION_UPLOAD_PATH
-  : path.join(__dirname, '../../../public/uploads/noticias');
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    if (!fs.existsSync(uploadPath)) {
-      fs.mkdirSync(uploadPath, { recursive: true });
-    }
-    cb(null, uploadPath);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const safeFileName = file.originalname.toLowerCase().replace(/[^a-z0-9.]/g, '-');
-    cb(null, `${uniqueSuffix}-${safeFileName}`);
-  }
-});
-
+// 🔹 Almacenamiento en memoria (las imágenes se suben a Hostinger, no se guardan en Vercel)
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
   fileFilter: (req, file, cb) => {
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
@@ -35,166 +17,112 @@ const upload = multer({
   }
 }).array('images', 5);
 
+// 🔹 Función para subir archivos a Hostinger vía SFTP
+async function uploadToHostinger(file) {
+  const sftp = new SftpClient();
+
+  try {
+    await sftp.connect({
+      host: process.env.SFTP_HOST, 
+      port: 22, 
+      username: process.env.SFTP_USER, 
+      password: process.env.SFTP_PASS
+    });
+
+    const filename = `${Date.now()}-${file.originalname.replace(/[^a-z0-9.]/gi, '_')}`;
+    const remotePath = `/fe815abbc021867e/files/public_html/uploads/noticias/${filename}`;
+
+    await sftp.put(file.buffer, remotePath); // 📌 Subir archivo
+    await sftp.end();
+
+    // 🔹 URL pública para acceder a la imagen
+    return `https://toyoesports.com/uploads/noticias/${filename}`;
+  } catch (error) {
+    console.error('Error al subir a Hostinger:', error);
+    throw new Error('No se pudo subir la imagen a Hostinger');
+  }
+}
+
+// 🔹 Controlador de noticias
 const newsController = {
   create: async (req, res) => {
     try {
       upload(req, res, async (err) => {
-        if (err) {
-          return res.status(400).json({ error: err.message });
-        }
-        
-        const images = req.files ? req.files.map(file => file.filename) : [];
-        const newsData = {
-          ...req.body,
-          images
-        };
-        
+        if (err) return res.status(400).json({ error: err.message });
+
         try {
+          // 🔹 Subir imágenes a Hostinger
+          const imageUrls = await Promise.all(req.files.map(uploadToHostinger));
+
+          const newsData = { ...req.body, images: imageUrls };
           const news = await News.create(newsData);
-          res.status(201).json(news);
+
+          res.status(201).json({ success: true, news });
         } catch (error) {
-          // Si hay error, eliminar las imágenes subidas
-          images.forEach(filename => {
-            const filepath = path.join(uploadPath, filename);
-            fs.unlink(filepath, err => {
-              if (err) console.error('Error eliminando imagen:', err);
-            });
-          });
-          
-          res.status(500).json({ 
-            error: 'Error al crear la noticia',
-            details: error.message 
-          });
+          res.status(500).json({ error: 'Error al crear la noticia', details: error.message });
         }
       });
     } catch (error) {
-      res.status(500).json({ 
-        error: 'Error del servidor', 
-        details: error.message 
-      });
+      res.status(500).json({ error: 'Error del servidor', details: error.message });
     }
   },
 
   getAll: async (req, res) => {
     try {
       const { page = 1, type } = req.query;
-      const news = await News.findAll({ 
-        page: parseInt(page), 
-        type 
-      });
-      
-      // Agregar la URL base a las imágenes
-      const newsWithFullUrls = {
-        ...news,
-        news: news.news.map(item => ({
-          ...item,
-          images: item.images.map(img => img)
-        }))
-      };
-      
-      res.json(newsWithFullUrls);
+      const news = await News.findAll({ page: parseInt(page), type });
+
+      res.json(news);
     } catch (error) {
-      res.status(500).json({ 
-        error: 'Error al obtener las noticias',
-        details: error.message 
-      });
+      res.status(500).json({ error: 'Error al obtener las noticias', details: error.message });
     }
   },
 
   getBySlug: async (req, res) => {
     try {
       const news = await News.findBySlug(req.params.slug);
-      if (!news) {
-        return res.status(404).json({ error: 'Noticia no encontrada' });
-      }
-      
-      // Agregar la URL base a las imágenes
-      const newsWithFullUrls = {
-        ...news,
-        images: news.images.map(img => img)
-      };
-      
-      res.json(newsWithFullUrls);
+      if (!news) return res.status(404).json({ error: 'Noticia no encontrada' });
+
+      res.json(news);
     } catch (error) {
-      res.status(500).json({ 
-        error: 'Error al obtener la noticia',
-        details: error.message 
-      });
+      res.status(500).json({ error: 'Error al obtener la noticia', details: error.message });
     }
   },
 
   update: async (req, res) => {
     try {
       const oldNews = await News.findBySlug(req.params.slug);
-      if (!oldNews) {
-        return res.status(404).json({ error: 'Noticia no encontrada' });
-      }
+      if (!oldNews) return res.status(404).json({ error: 'Noticia no encontrada' });
 
       upload(req, res, async (err) => {
-        if (err) {
-          return res.status(400).json({ error: err.message });
-        }
-
-        const updateData = { ...req.body };
-        
-        if (req.files && req.files.length > 0) {
-          // Eliminar imágenes antiguas
-          oldNews.images.forEach(filename => {
-            const filepath = path.join(uploadPath, filename);
-            fs.unlink(filepath, err => {
-              if (err) console.error('Error eliminando imagen antigua:', err);
-            });
-          });
-          
-          updateData.images = req.files.map(file => file.filename);
-        }
+        if (err) return res.status(400).json({ error: err.message });
 
         try {
+          // 🔹 Subir nuevas imágenes a Hostinger si hay nuevas
+          const imageUrls = req.files.length > 0 ? await Promise.all(req.files.map(uploadToHostinger)) : oldNews.images;
+
+          const updateData = { ...req.body, images: imageUrls };
           const updatedNews = await News.update(req.params.slug, updateData);
+
           res.json(updatedNews);
         } catch (error) {
-          // Si hay error, eliminar las nuevas imágenes
-          if (req.files) {
-            req.files.forEach(file => {
-              fs.unlink(file.path, err => {
-                if (err) console.error('Error eliminando imagen:', err);
-              });
-            });
-          }
-          
-          throw error;
+          res.status(500).json({ error: 'Error al actualizar la noticia', details: error.message });
         }
       });
     } catch (error) {
-      res.status(500).json({ 
-        error: 'Error al actualizar la noticia',
-        details: error.message 
-      });
+      res.status(500).json({ error: 'Error del servidor', details: error.message });
     }
   },
 
   delete: async (req, res) => {
     try {
       const news = await News.findBySlug(req.params.slug);
-      if (!news) {
-        return res.status(404).json({ error: 'Noticia no encontrada' });
-      }
-
-      // Eliminar imágenes
-      news.images.forEach(filename => {
-        const filepath = path.join(uploadPath, filename);
-        fs.unlink(filepath, err => {
-          if (err) console.error('Error eliminando imagen:', err);
-        });
-      });
+      if (!news) return res.status(404).json({ error: 'Noticia no encontrada' });
 
       await News.delete(req.params.slug);
       res.json({ message: 'Noticia eliminada correctamente' });
     } catch (error) {
-      res.status(500).json({ 
-        error: 'Error al eliminar la noticia',
-        details: error.message 
-      });
+      res.status(500).json({ error: 'Error al eliminar la noticia', details: error.message });
     }
   }
 };
