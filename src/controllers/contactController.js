@@ -26,18 +26,7 @@ const sendEmail = async (req, res) => {
       });
     }
 
-    // Preparar los archivos adjuntos si existen
-    let attachments = [];
-    if (req.files && req.files.length > 0) {
-      attachments = req.files.map(file => ({
-        content: file.buffer.toString('base64'),
-        filename: file.originalname,
-        type: file.mimetype, 
-        disposition: 'attachment'
-      }));
-    }
-
-    // Construir el mensaje de email
+    // Construir el mensaje de email sin archivos adjuntos
     const msg = {
       to: process.env.TO_EMAIL,
       from: process.env.FROM_EMAIL,
@@ -47,8 +36,7 @@ const sendEmail = async (req, res) => {
         <strong>Email de contacto:</strong> ${email}<br><br>
         <strong>Mensaje:</strong><br>
         ${message.replace(/\n/g, '<br>')}
-      `,
-      attachments
+      `
     };
 
     // Enviar el email
@@ -65,12 +53,6 @@ const sendEmail = async (req, res) => {
     if (error.code === 401) {
       return res.status(401).json({ 
         message: 'Error de autenticación con el servicio de email' 
-      });
-    }
-    
-    if (error.code === 413) {
-      return res.status(413).json({ 
-        message: 'Los archivos adjuntos son demasiado grandes' 
       });
     }
     
