@@ -1,75 +1,42 @@
 // server/src/controllers/newsController.js
-const fs = require('node:fs');
-const path = require('path');
 const News = require('../models/News');
-const multer = require('multer');
-
-// Determinar la ruta de upload según el entorno
-const uploadPath = process.env.NODE_ENV === 'production'
-  ? process.env.PRODUCTION_UPLOAD_PATH
-  : path.join(__dirname, '../../../public/uploads/noticias');
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    if (!fs.existsSync(uploadPath)) {
-      fs.mkdirSync(uploadPath, { recursive: true });
-    }
-    cb(null, uploadPath);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const safeFileName = file.originalname.toLowerCase().replace(/[^a-z0-9.]/g, '-');
-    cb(null, `${uniqueSuffix}-${safeFileName}`);
-  }
-});
-
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Solo se permiten JPG, PNG y WebP'));
-    }
-  }
-}).array('images', 5);
 
 const newsController = {
   create: async (req, res) => {
     try {
-      upload(req, res, async (err) => {
-        if (err) {
-          return res.status(400).json({ error: err.message });
-        }
-        
-        const images = req.files ? req.files.map(file => file.filename) : [];
-        const newsData = {
-          ...req.body,
-          images
-        };
-        
+      const { type, title, body, images } = req.body;
+      
+      if (!type || !title || !body || !images || !Array.isArray(images) || images.length === 0) {
+        return res.status(400).json({ 
+          error: 'Datos insuficientes. Se requiere type, title, body y un array de images con al menos una URL'
+        });
+      }
+      
+      // Verificar que todas las imágenes sean URLs válidas
+      for (const url of images) {
         try {
-          const news = await News.create(newsData);
-          res.status(201).json(news);
-        } catch (error) {
-          // Si hay error, eliminar las imágenes subidas
-          images.forEach(filename => {
-            const filepath = path.join(uploadPath, filename);
-            fs.unlink(filepath, err => {
-              if (err) console.error('Error eliminando imagen:', err);
-            });
-          });
-          
-          res.status(500).json({ 
-            error: 'Error al crear la noticia',
-            details: error.message 
+          new URL(url);
+        } catch (e) {
+          return res.status(400).json({
+            error: 'Una o más URLs de imágenes no son válidas',
+            details: e.message
           });
         }
-      });
+      }
+      
+      const newsData = {
+        type,
+        title,
+        body,
+        images
+      };
+      
+      const news = await News.create(newsData);
+      res.status(201).json({ success: true, ...news });
+      
     } catch (error) {
       res.status(500).json({ 
-        error: 'Error del servidor', 
+        error: 'Error al crear la noticia',
         details: error.message 
       });
     }
@@ -83,16 +50,7 @@ const newsController = {
         type 
       });
       
-      // Agregar la URL base a las imágenes
-      const newsWithFullUrls = {
-        ...news,
-        news: news.news.map(item => ({
-          ...item,
-          images: item.images.map(img => img)
-        }))
-      };
-      
-      res.json(newsWithFullUrls);
+      res.json(news);
     } catch (error) {
       res.status(500).json({ 
         error: 'Error al obtener las noticias',
@@ -108,13 +66,7 @@ const newsController = {
         return res.status(404).json({ error: 'Noticia no encontrada' });
       }
       
-      // Agregar la URL base a las imágenes
-      const newsWithFullUrls = {
-        ...news,
-        images: news.images.map(img => img)
-      };
-      
-      res.json(newsWithFullUrls);
+      res.json(news);
     } catch (error) {
       res.status(500).json({ 
         error: 'Error al obtener la noticia',
@@ -130,41 +82,38 @@ const newsController = {
         return res.status(404).json({ error: 'Noticia no encontrada' });
       }
 
-      upload(req, res, async (err) => {
-        if (err) {
-          return res.status(400).json({ error: err.message });
-        }
-
-        const updateData = { ...req.body };
-        
-        if (req.files && req.files.length > 0) {
-          // Eliminar imágenes antiguas
-          oldNews.images.forEach(filename => {
-            const filepath = path.join(uploadPath, filename);
-            fs.unlink(filepath, err => {
-              if (err) console.error('Error eliminando imagen antigua:', err);
-            });
-          });
-          
-          updateData.images = req.files.map(file => file.filename);
-        }
-
-        try {
-          const updatedNews = await News.update(req.params.slug, updateData);
-          res.json(updatedNews);
-        } catch (error) {
-          // Si hay error, eliminar las nuevas imágenes
-          if (req.files) {
-            req.files.forEach(file => {
-              fs.unlink(file.path, err => {
-                if (err) console.error('Error eliminando imagen:', err);
-              });
+      const { type, title, body, images } = req.body;
+      
+      // Validar datos
+      if (!type && !title && !body && (!images || !Array.isArray(images))) {
+        return res.status(400).json({ error: 'No se proporcionaron datos para actualizar' });
+      }
+      
+      // Si hay imágenes, verificar que sean URLs válidas
+      if (images && Array.isArray(images)) {
+        for (const url of images) {
+          try {
+            new URL(url);
+          } catch (e) {
+            return res.status(400).json({
+              error: 'Una o más URLs de imágenes no son válidas',
+              details: e.message
             });
           }
-          
-          throw error;
         }
-      });
+      }
+      
+      const updateData = {};
+      if (type) updateData.type = type;
+      if (title) updateData.title = title;
+      if (body) updateData.body = body;
+      if (images && Array.isArray(images) && images.length > 0) {
+        updateData.images = images;
+      }
+
+      const updatedNews = await News.update(req.params.slug, updateData);
+      res.json({ success: true, ...updatedNews });
+      
     } catch (error) {
       res.status(500).json({ 
         error: 'Error al actualizar la noticia',
@@ -179,14 +128,6 @@ const newsController = {
       if (!news) {
         return res.status(404).json({ error: 'Noticia no encontrada' });
       }
-
-      // Eliminar imágenes
-      news.images.forEach(filename => {
-        const filepath = path.join(uploadPath, filename);
-        fs.unlink(filepath, err => {
-          if (err) console.error('Error eliminando imagen:', err);
-        });
-      });
 
       await News.delete(req.params.slug);
       res.json({ message: 'Noticia eliminada correctamente' });
