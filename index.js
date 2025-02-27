@@ -11,15 +11,21 @@ const app = express();
 
 // Configuración CORS específica
 const corsOptions = {
-  origin: ['https://toyoesports.com', 'http://localhost:3000'], // Añade aquí todos los dominios que necesites
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  origin: 'https://toyoesports.com', // Solo permitir el dominio frontend
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
 };
 
-// Middleware con las opciones CORS
 app.use(cors(corsOptions));
 app.use(express.json());
+
+// 🔥 Agregar manualmente las cabeceras CORS necesarias
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', 'https://toyoesports.com');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  next();
+});
 
 // Configurar multer para archivos estáticos
 app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
