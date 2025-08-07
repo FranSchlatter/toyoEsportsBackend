@@ -12,7 +12,7 @@ const sendEmail = async (req, res) => {
     const { subject, email, message } = req.body;
     
     // Validación básica
-    if (!subject || !email || !message) {
+    if (!subject || !email || !message) { 
       return res.status(400).json({ 
         message: 'Por favor, complete todos los campos requeridos' 
       });
