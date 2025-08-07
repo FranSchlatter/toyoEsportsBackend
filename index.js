@@ -11,7 +11,7 @@ const app = express();
 
 // Configuración CORS específica
 const corsOptions = {
-  origin: 'https://toyoesports.com', // Solo permitir el dominio frontend
+  origin: ['https://toyoesports.com', 'https://www.toyoesports.com'], // Permitir ambos dominios
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
@@ -22,7 +22,10 @@ app.use(express.json());
 
 // 🔥 Agregar manualmente las cabeceras CORS necesarias
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', 'https://toyoesports.com');
+  const origin = req.headers.origin;
+  if (origin === 'https://toyoesports.com' || origin === 'https://www.toyoesports.com') {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
   res.header('Access-Control-Allow-Credentials', 'true');
   next();
 });
