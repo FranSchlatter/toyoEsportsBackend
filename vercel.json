@@ -11,11 +11,11 @@
       "src": "/(.*)",
       "dest": "index.js",
       "headers": {
-        "Access-Control-Allow-Origin": "https://toyoesports.com",
+        "Access-Control-Allow-Origin": "https://toyoesports.com, https://www.toyoesports.com",
         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "X-Requested-With, Content-Type, Accept, Authorization",
         "Access-Control-Allow-Credentials": "true",
-        "Content-Security-Policy": "default-src 'self' https://toyoesports.com; connect-src 'self' https://toyo-esports-backend.vercel.app https://toyoesports.com;"
+        "Content-Security-Policy": "default-src 'self' https://toyoesports.com https://www.toyoesports.com; connect-src 'self' https://toyo-esports-backend.vercel.app https://toyoesports.com https://www.toyoesports.com;"
       }
     }
   ]
